@@ -55,22 +55,22 @@ option numdgt=7
 * transient analysis
 tran 50n 30u
 * save Vout data in a file named 'tran_TwoStage.csv'
-* --- ??? ---
+wrdata tran_TwoStage.csv v(net6)
 
 * ac analysis
 ac dec 10 1 1T
 * save Vout data in a file named 'ac_TwoStage.csv'
-* --- ??? ---
+wrdata ac_TwoStage.csv v(net6)
 
 * noise analysis
 * calculate the output noise and save it in a file named 'noise_TwoStage.csv'
-* --- ??? ---
-* --- ??? ---
+noise v(net6) Vinput dec 10 1 1T
+wrdata noise_TwoStage.csv noise2.onoise_total
 
 * dc analysis
 op
 * save the total current consumption in a file named 'dc_TwoStage.csv'
-* --- ??? ---
+wrdata dc_TwoStage.csv i(vdd)
 
 .endc
 
