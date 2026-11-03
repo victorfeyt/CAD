@@ -117,6 +117,7 @@ class DUT(NgspiceWrapper):
                     slew_rates.append((v_high - v_low) / (later[0] - t_start))   # V/s
 
         # --- Step 4: worst case, converted to V/us ---
+        units = {'s': 1.0, 'ms': 1e-3, 'us': 1e-6, 'ns': 1e-9}
         if not slew_rates:
             return 0.0
         return min(slew_rates) * units[time_unit]
@@ -132,13 +133,3 @@ class DUT(NgspiceWrapper):
             return sciopt.brentq(fzero, xstart, xstop), True
         except ValueError:
             return xstop, False
-        
-    def crossings(level, rising):
-        above = signal >= level                           # True/False per sample
-        if rising:   # sample i below, sample i+1 above
-            idx = np.where(above[1:] & ~above[:-1])[0]
-        else:        # sample i above, sample i+1 below
-            idx = np.where(~above[1:] & above[:-1])[0]
-        t0, t1 = time[idx], time[idx + 1]
-        y0, y1 = signal[idx], signal[idx + 1]
-        return t0 + (level - y0) * (t1 - t0) / (y1 - y0)  # linear interpolation
