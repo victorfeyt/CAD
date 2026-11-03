@@ -1,2 +1,4 @@
 /.venv
 /ngspice_interface/ngspice_wrapper.py
+/no_backup
+__pycache__/
