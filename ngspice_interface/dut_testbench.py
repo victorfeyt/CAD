@@ -50,33 +50,76 @@ class DUT(NgspiceWrapper):
         self.current = - dc_raw_outputs[1]
 
         self.noise = noise_raw_outputs[0]
-    
+
+    # The absolute value of the complex vout at 0 frequency, so first line in csv file
     def find_dc_gain(self, vout):
-        """
-        TODO: Implement the DC gain calculation
-        
-        Hint:
-        Use numpy's abs() function to calculate the magnitude of the complex number at each point.
-        """
-        pass
+
+        return abs(vout[0])
         
     def find_ugbw(self, freq, vout):
-        """
-        TODO: Implement the unity gain bandwidth (UGBW) calculation
-        """
-        pass
+        # gain plot
+        gain = np.abs(vout)
+
+        # x-vector are the frequecy sample points, y vector is the gain, find value where gain crosses val = 1
+        log_ugbw, valid = self._get_best_crossing(np.log10(freq), gain, 1)
+
+        if not valid:  
+            return 0.0
+        return 10 ** log_ugbw   # back from log10(f) to Hz
     
     def find_phm(self, freq, vout):
         """
-        TODO: Implement the phase margin (PHM) calculation
+        Phase margin: PM = 180 + phase(f_UGBW), in degrees.
         """
-        pass
+        ugbw = self.find_ugbw(freq, vout)
+        if ugbw == 0:   # no UGBW -> no meaningful PM, return a clearly failing value
+            return -180.0
+
+        # phase in degrees, unwrapped to remove the 360 deg jumps of np.angle
+        # np.angle only returns values (-180°, 180°], by unwrapping this is corrected
+        phase = np.degrees(np.unwrap(np.angle(vout)))
+        phase -= phase[0]   # reference to DC phase (0 deg), just a shift to 0° at DC
+
+        # phase at exactly f = UGBW, interpolated on the log-frequency axis
+        phase_at_ugbw = np.interp(np.log10(ugbw), np.log10(freq), phase)
+
+        return 180.0 + phase_at_ugbw
     
     def find_slew_rate(self, time, signal, threshold_low=0.1, threshold_high=0.9, time_unit='us'):
-        """
-        TODO: Implement the slew rate calculation
-        """
-        pass
+        # --- Step 1: turn the fractions into voltage levels ---
+        vmin, vmax = np.min(signal), np.max(signal)
+        swing = vmax - vmin
+        if swing <= 1e-6:          # output doesn't move -> no slew rate
+            return 0.0
+        v_low  = vmin + threshold_low  * swing    # 10% level
+        v_high = vmin + threshold_high * swing    # 90% level
+
+        # --- Step 2: helper that finds the exact times the signal crosses a level ---
+        def crossings(level, rising):
+            above = signal >= level                           # True/False per sample
+            if rising:   # sample i below, sample i+1 above
+                idx = np.where(above[1:] & ~above[:-1])[0]
+            else:        # sample i above, sample i+1 below
+                idx = np.where(~above[1:] & above[:-1])[0]
+            t0, t1 = time[idx], time[idx + 1]
+            y0, y1 = signal[idx], signal[idx + 1]
+            return t0 + (level - y0) * (t1 - t0) / (y1 - y0)  # linear interpolation
+        
+        # --- Step 3: measure every rising and falling edge ---
+        slew_rates = []
+        for rising, (start_level, end_level) in [(True,  (v_low,  v_high)),    # rising:  10% -> 90%
+                                                (False, (v_high, v_low))]:    # falling: 90% -> 10%
+            t_starts = crossings(start_level, rising)
+            t_ends   = crossings(end_level,   rising)
+            for t_start in t_starts:
+                later = t_ends[t_ends > t_start]          # first end-crossing after this start
+                if later.size:
+                    slew_rates.append((v_high - v_low) / (later[0] - t_start))   # V/s
+
+        # --- Step 4: worst case, converted to V/us ---
+        if not slew_rates:
+            return 0.0
+        return min(slew_rates) * units[time_unit]
 
     def _get_best_crossing(cls, xvec, yvec, val):
         interp_fun = interp.InterpolatedUnivariateSpline(xvec, yvec)
@@ -89,3 +132,13 @@ class DUT(NgspiceWrapper):
             return sciopt.brentq(fzero, xstart, xstop), True
         except ValueError:
             return xstop, False
+        
+    def crossings(level, rising):
+        above = signal >= level                           # True/False per sample
+        if rising:   # sample i below, sample i+1 above
+            idx = np.where(above[1:] & ~above[:-1])[0]
+        else:        # sample i above, sample i+1 below
+            idx = np.where(~above[1:] & above[:-1])[0]
+        t0, t1 = time[idx], time[idx + 1]
+        y0, y1 = signal[idx], signal[idx + 1]
+        return t0 + (level - y0) * (t1 - t0) / (y1 - y0)  # linear interpolation
