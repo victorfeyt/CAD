@@ -53,7 +53,7 @@ set wr_vecnames
 option numdgt=7
 
 * transient analysis
-tran 50n 30u
+tran 2n 5u
 * save Vout data in a file named 'tran_TwoStage.csv'
 wrdata tran_TwoStage.csv v(net6)
 

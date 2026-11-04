@@ -29,8 +29,8 @@ targets:
   gain: !!float 200
   noise: !!float 3.0e-2
   phm: !!float 60.0
-  slewRate: !!float 15.0
-  ugbw: !!float 1.0e+6
+  slewRate: !!float 30.0
+  ugbw: !!float 100.0e+6
 
 hard_constraints: !!python/tuple ['gain', 'noise', 'phm', 'slewRate', 'ugbw']
 optimization_targets: !!python/tuple ['area', 'current']

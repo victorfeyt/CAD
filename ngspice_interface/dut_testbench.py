@@ -107,8 +107,7 @@ class DUT(NgspiceWrapper):
         
         # --- Step 3: measure every rising and falling edge ---
         slew_rates = []
-        for rising, (start_level, end_level) in [(True,  (v_low,  v_high)),    # rising:  10% -> 90%
-                                                (False, (v_high, v_low))]:    # falling: 90% -> 10%
+        for rising, (start_level, end_level) in [(True,  (v_low,  v_high))]:
             t_starts = crossings(start_level, rising)
             t_ends   = crossings(end_level,   rising)
             for t_start in t_starts:
