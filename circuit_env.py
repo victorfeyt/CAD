@@ -64,23 +64,53 @@ class CircuitEnv(gym.Env):
     
     def action_refine(self, action):
         """
-        TODO: Implement a function that converts normalized actions of range [-1, 1] to actual parameter values.
-        
+        Implement a function that converts normalized actions of range [-1, 1] to actual parameter values.
         """
-        pass
-    
+        action = np.clip(np.asarray(action, dtype=np.float64).flatten(), -1, 1)
+
+        params = {}
+        for i, (name, value) in enumerate(self.dict_params.items()):
+            min_val, max_val, step = value
+            # Convert normalized action to actual parameter value
+            param_value = min_val + (action[i] + 1) / 2 * (max_val - min_val)
+            # Round to the nearest step size
+            param_value = round(param_value / step) * step
+            # Ensure the parameter value is within bounds
+            param_value = np.clip(param_value, min_val, max_val)
+            params[name] = param_value
+
+        return params
+
     def simulate(self, params):
         """
-        TODO: Create/Simulate netlist with the given parameters and return the measured metrics.
-
+        Create/Simulate netlist with the given parameters and return the measured metrics.
         Args:
             params (dict): A dictionary containing the parameters for the simulation.
 
         Returns:
             dict: A dictionary containing the measured metrics from the simulation.
         """
-        pass
-    
+        params = {name: float(value) for name, value in params.items()}
+
+        # Create a new netlist with the given parameters
+        netlist_path = self.simulation_engine.create_new_netlist(
+            parameters=params,
+            process=self.pvt_corner['process'],
+            temp_pvt=self.pvt_corner['temp'],
+            vdd=self.pvt_corner['voltage']
+            )
+
+        # Run the simulation check for errors
+        info = self.simulation_engine.simulate(netlist_path)
+
+        # Return the measured metrics from the simulation
+        # simulate() returns 0 on success, 1 if ngspice failed
+        if info == 1:
+            raise RuntimeError(f"ngspice simulation failed for {netlist_path}")
+
+        specs = self.simulation_engine.measure_metrics()
+        return {name: float(value) for name, value in specs.items()}
+
     def normalize_specs(self, spec_dict):
         """
         TODO: Normalize the specifications in `spec_dict` based on target specifications.
@@ -98,7 +128,11 @@ class CircuitEnv(gym.Env):
             dict: A dictionary containing the normalized specifications, with the same keys
                   as `spec_dict`.
         """
-        pass
+        norm_specs = {}
+        for name, goal in self.dict_targets.items():
+            spec = spec_dict[name]
+            norm_specs[name] = (spec - goal) / (spec + goal)
+        return norm_specs
     
     def evaluate(self, action):
         self.param_values = self.action_refine(action)
