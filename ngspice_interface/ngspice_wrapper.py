@@ -117,9 +117,20 @@ class NgspiceWrapper(object):
 
     @staticmethod
     def find_ngspice():
-        path = os.environ.get("NGSPICE_PATH") or shutil.which("ngspice")
+        path = (os.environ.get("NGSPICE_PATH")
+                or shutil.which("ngspice_con")  # Windows console build (best for batch mode)
+                or shutil.which("ngspice"))
+        if path is None:
+            # Fall back to the default Windows install locations
+            for candidate in (r"C:\Spice64\bin\ngspice_con.exe", r"C:\Spice64\bin\ngspice.exe",
+                              r"C:\Spice\bin\ngspice_con.exe", r"C:\Spice\bin\ngspice.exe"):
+                if os.path.isfile(candidate):
+                    path = candidate
+                    break
         if path is None:
             raise FileNotFoundError(
+                "ngspice executable not found. Add its bin folder to PATH or set the "
+                "NGSPICE_PATH environment variable to the full path of the executable."
             )
         return path
 
