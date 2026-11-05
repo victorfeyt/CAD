@@ -134,11 +134,19 @@ class NgspiceWrapper(object):
             )
         return path
 
+    # A normal simulation takes well under a second. Some designs (e.g. res=0 with a
+    # tiny cap) make ngspice's time step collapse, so it would run practically forever.
+    SIM_TIMEOUT = 10  # seconds
+
     def simulate(self, netlist_path):
         info = 0 # this means no error occurred
         # list of arguments (no shell string) -> paths with spaces work too
-        result = subprocess.run([self.find_ngspice(), "-b", netlist_path],
-                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        try:
+            result = subprocess.run([self.find_ngspice(), "-b", netlist_path],
+                                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                    timeout=self.SIM_TIMEOUT)
+        except subprocess.TimeoutExpired: # subprocess.run has already killed ngspice
+            return 1
         if result.returncode != 0:
             info = 1 # this means an error has occurred
         return info

@@ -1,3 +1,5 @@
 /.venv
 /no_backup
 __pycache__/
+/output_figs
+/solutions

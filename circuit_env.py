@@ -131,14 +131,27 @@ class CircuitEnv(gym.Env):
         """
         norm_specs = {}
         for name, goal in self.dict_targets.items():
-            spec = spec_dict[name]
+            # phm is the only spec that can go negative. The formula breaks there: it blows
+            # up near spec = -goal and turns positive below it, so an unstable circuit would
+            # look like it beats the target. Treating negative specs as 0 gives -1 instead.
+            spec = max(spec_dict[name], 0.0)
             norm_specs[name] = (spec - goal) / (spec + goal)
         return norm_specs
     
     def evaluate(self, action):
         self.param_values = self.action_refine(action)
-        self.real_specs = self.simulate(self.param_values)
-        self.cur_norm_specs = self.normalize_specs(self.real_specs)
+        try:
+            self.real_specs = self.simulate(self.param_values)
+            if not np.all(np.isfinite(list(self.real_specs.values()))):
+                raise ValueError(f"non-finite specs: {self.real_specs}")
+            self.cur_norm_specs = self.normalize_specs(self.real_specs)
+        except (RuntimeError, ValueError, IndexError, OSError) as error:
+            # A failed design must not stop training: give it the worst possible norm specs
+            # so the agent learns to avoid it.
+            print(f"[env step {self.env_steps}] simulation failed: {error}")
+            self.real_specs = {name: float('nan') for name in self.dict_targets}
+            self.cur_norm_specs = {name: 1.0 if name in self.lower_is_better else -1.0
+                                   for name in self.dict_targets}
     
     def reset(self, *, seed=None, options=None):
         """
