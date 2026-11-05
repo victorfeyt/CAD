@@ -9,57 +9,57 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 
 class Actor(nn.Module):
-	def __init__(self, state_dim, action_dim, max_action):
-		super(Actor, self).__init__()
+    def __init__(self, state_dim, action_dim, max_action):
+        super(Actor, self).__init__()
 
-		self.l1 = nn.Linear(state_dim, 256)
-		self.l2 = nn.Linear(256, 256)
-		self.l3 = nn.Linear(256, action_dim)
-		
-		self.max_action = max_action
-		
+        self.l1 = nn.Linear(state_dim, 256)
+        self.l2 = nn.Linear(256, 256)
+        self.l3 = nn.Linear(256, action_dim)
+        
+        self.max_action = max_action
+        
 
-	def forward(self, state):
-		a = F.relu(self.l1(state))
-		a = F.relu(self.l2(a))
-		return self.max_action * torch.tanh(self.l3(a))
+    def forward(self, state):
+        a = F.relu(self.l1(state))
+        a = F.relu(self.l2(a))
+        return self.max_action * torch.tanh(self.l3(a))
 
 
 class Critic(nn.Module):
-	def __init__(self, state_dim, action_dim):
-		super(Critic, self).__init__()
+    def __init__(self, state_dim, action_dim):
+        super(Critic, self).__init__()
 
-		# Q1 architecture
-		self.l1 = nn.Linear(state_dim + action_dim, 256)
-		self.l2 = nn.Linear(256, 256)
-		self.l3 = nn.Linear(256, 1)
+        # Q1 architecture
+        self.l1 = nn.Linear(state_dim + action_dim, 256)
+        self.l2 = nn.Linear(256, 256)
+        self.l3 = nn.Linear(256, 1)
 
-		# Q2 architecture
-		self.l4 = nn.Linear(state_dim + action_dim, 256)
-		self.l5 = nn.Linear(256, 256)
-		self.l6 = nn.Linear(256, 1)
-
-
-	def forward(self, state, action):
-		sa = torch.cat([state, action], 1)
-
-		q1 = F.relu(self.l1(sa))
-		q1 = F.relu(self.l2(q1))
-		q1 = self.l3(q1)
-
-		q2 = F.relu(self.l4(sa))
-		q2 = F.relu(self.l5(q2))
-		q2 = self.l6(q2)
-		return q1, q2
+        # Q2 architecture
+        self.l4 = nn.Linear(state_dim + action_dim, 256)
+        self.l5 = nn.Linear(256, 256)
+        self.l6 = nn.Linear(256, 1)
 
 
-	def Q1(self, state, action):
-		sa = torch.cat([state, action], 1)
+    def forward(self, state, action):
+        sa = torch.cat([state, action], 1)
 
-		q1 = F.relu(self.l1(sa))
-		q1 = F.relu(self.l2(q1))
-		q1 = self.l3(q1)
-		return q1
+        q1 = F.relu(self.l1(sa))
+        q1 = F.relu(self.l2(q1))
+        q1 = self.l3(q1)
+
+        q2 = F.relu(self.l4(sa))
+        q2 = F.relu(self.l5(q2))
+        q2 = self.l6(q2)
+        return q1, q2
+
+
+    def Q1(self, state, action):
+        sa = torch.cat([state, action], 1)
+
+        q1 = F.relu(self.l1(sa))
+        q1 = F.relu(self.l2(q1))
+        q1 = self.l3(q1)
+        return q1
 
 
 class TD3(object):
@@ -104,7 +104,17 @@ class TD3(object):
         Returns:
             action: The selected action as a numpy array
         """
-        pass
+        state = torch.FloatTensor(state.reshape(1, -1)).to(device) # Convert state to tensor and move to device
+        action = self.actor(state).cpu().data.numpy() # Get deterministic action from actor network
+        noise = np.random.normal(0, self.max_action * self.expl_noise, size=self.action_dim) # Add exploration noise
+        action = action.flatten() + noise # Add noise to the action
+        action = np.clip(action, -self.max_action, self.max_action) # Clip the action to be within valid range
+
+
+            
+        return action
+        
+        
 
 
     def update_parameters(self, memory_batch, update):
@@ -143,6 +153,45 @@ class TD3(object):
             memory_batch: Tuple of (state, action, next_state, reward, not_done) tensors
             update: Update step (not used in this implementation)
         """
+
+        self.total_it += 1 
+
+        state, action, next_state, reward, not_done = memory_batch
+
+        # build the target, no graph for the target, we don't want to backprop through the target
+        with torch.no_grad(): # working with tensors here
+            noise = (torch.randn_like(action) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip) # Add clipped policy noise 
+            next_action = (self.actor_target(next_state) + noise).clamp(-self.max_action, self.max_action) # Get next actions from target actor network and clip to valid range
+            target_Q1, target_Q2 = self.critic_target(next_state, next_action) # Get Q-values from both target critics
+            target_Q = torch.min(target_Q1, target_Q2) # prevent overestimation by taking the minimum of both Q-values
+            target_Q = reward + not_done * self.discount * target_Q # Bellman equation
+
+        # get current Q estimates
+        current_Q1, current_Q2 = self.critic(state, action) # Get current Q-values from both critics
+        critic_loss = F.mse_loss(current_Q1, target_Q) + F.mse_loss(current_Q2, target_Q) # Compute MSE loss between current and target Q-values for both critics
+
+        # Update the critic
+        self.critic_optimizer.zero_grad() # clears the old gradients
+        critic_loss.backward() # backpropagate the loss, computes the gradients
+        self.critic_optimizer.step() # update the weights
+
+        # Delayed policy updates
+        if self.total_it % self.policy_freq == 0:
+            actor_loss = -self.critic.Q1(state, self.actor(state)).mean() # Compute actor loss using first critic's Q-values
+            self.actor_optimizer.zero_grad() # clears the old gradients
+            actor_loss.backward() # backpropagate the loss, computes the gradients
+            self.actor_optimizer.step() # update the weights
+
+            for param, target_param in zip(self.critic.parameters(), self.critic_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+            for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
+                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+
+
+
+
+            
+
 
 
     def save(self, filename):
