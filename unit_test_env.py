@@ -1,6 +1,5 @@
 """
 Unit tests for CircuitEnv.action_refine.
-Non for simulate
 
 Run FROM the CAD/ directory:
     python -m unittest unit_test_env -v
@@ -60,6 +59,17 @@ class TestActionRefine(unittest.TestCase):
             expected = r['min'] + ((n - 1) // 2) * r['step']
             with self.subTest(param=name):
                 self.assertParamEqual(name, out[name], expected)
+
+    def test_out_of_bounds_clipped(self):
+        # The action_refine() docstring says it clips to [-1, 1], so test that use actions {-2, 2}
+        out = self.env.action_refine(2*np.ones(self.env.n_actions))
+        for name, r in self.env.param_ranges.items():
+            with self.subTest(param=name):
+                self.assertParamEqual(name, out[name], r['max'] - r['step'])
+        out = self.env.action_refine(-2*np.ones(self.env.n_actions))
+        for name, r in self.env.param_ranges.items():
+            with self.subTest(param=name):
+                self.assertParamEqual(name, out[name], r['min'])
 
     def test_matches_references_csv(self):
         # Ground truth: action_<p> in references.csv must map to param_<p>.
@@ -129,6 +139,32 @@ class TestNormalizeSpecs(unittest.TestCase):
                 with self.subTest(design=row['name'], spec=name):
                     self.assertAlmostEqual(norm_specs[name], float(row[f'norm_{name}']),
                                            places=9, msg=name)
+
+    def test_zero_spec_gives_minus_one(self):
+        # (0 - goal) / (0 + goal) = -1 for any positive goal, the worst normalized value.
+        # A negative phase margin (unstable) is clipped to 0, so it must map to -1 too.
+        norm_specs = self.env.normalize_specs({name: 0.0 for name in self.env.dict_targets})
+        for name in self.env.dict_targets:
+            with self.subTest(spec=name):
+                self.assertAlmostEqual(norm_specs[name], -1.0, places=12)
+        spec_dict = {name: float(goal) for name, goal in self.env.dict_targets.items()}
+        spec_dict['phm'] = -30.0
+        self.assertAlmostEqual(self.env.normalize_specs(spec_dict)['phm'], -1.0, places=12)
+
+    def test_goal_spec_gives_zero(self):
+        # (goal - goal) / (goal + goal) = 0, the middle of the normalized range.
+        spec_dict = {name: float(goal) for name, goal in self.env.dict_targets.items()}
+        norm_specs = self.env.normalize_specs(spec_dict)
+        for name in self.env.dict_targets:
+            with self.subTest(spec=name):
+                self.assertAlmostEqual(norm_specs[name], 0.0, places=12)
+
+    def test_negative_phase_margin_gives_minus_one(self):
+        # PM <= 0 is unstable, so normalize_specs clips it to 0 -> (0 - 60) / (0 + 60) = -1.
+        spec_dict = {name: float(goal) for name, goal in self.env.dict_targets.items()}
+        spec_dict['phm'] = -45.0
+        self.assertAlmostEqual(self.env.normalize_specs(spec_dict)['phm'], -1.0, places=12)
+
 
 class TestRewardComputation(unittest.TestCase):
     """No simulator. Feeds each design's reference norm_* straight into

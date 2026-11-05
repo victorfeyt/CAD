@@ -86,7 +86,7 @@ class TD3(object):
 
     def select_action(self, state):
         """
-        TODO: Implement the action selection mechanism for the TD3 agent
+        Implement the action selection mechanism for the TD3 agent
         
         Steps to implement:
         1. Convert the state to a tensor if it's a numpy array or CPU tensor
@@ -119,7 +119,7 @@ class TD3(object):
 
     def update_parameters(self, memory_batch, update):
         """
-        TODO: Implement the TD3 learning algorithm
+        Implement the TD3 learning algorithm
         
         Steps to implement:
         1. Increment total_it counter

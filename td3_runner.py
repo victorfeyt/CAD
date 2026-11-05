@@ -1,5 +1,6 @@
 import argparse
 import os
+import shutil
 import torch
 import numpy as np
 from td3 import TD3, ReplayBuffer
@@ -12,10 +13,10 @@ def readParser():
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed (default: 123456)')
 
-    parser.add_argument('--noise_sigma', type=float, default="???",
+    parser.add_argument('--noise_sigma', type=float, default=0.1,
                         help='fixed noise sigma added to the deterministic action')
 
-    parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
+    parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
                         help='discount factor for reward (default: 0.99)')
     
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
@@ -30,19 +31,19 @@ def readParser():
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     
-    parser.add_argument('--batch_size', type=int, default="???", metavar='N',
+    parser.add_argument('--batch_size', type=int, default=128, metavar='N',
                         help='hidden size')
     
-    parser.add_argument('--w', type=int, default="???", metavar='N',
+    parser.add_argument('--w', type=int, default=1000, metavar='N',
                         help='number of warmup steps')
     
     parser.add_argument('--T', type=int, default=10_000, metavar='N',
                         help='total training steps (default: 10_000)')
     
-    parser.add_argument('--pi_lr', type=float, default="???", metavar='G',
+    parser.add_argument('--pi_lr', type=float, default=0.0003, metavar='G',
                         help='learning rate')
     
-    parser.add_argument('--q_lr', type=float, default="???", metavar='G',
+    parser.add_argument('--q_lr', type=float, default=0.0003, metavar='G',
                         help='learning rate')
 
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
@@ -71,8 +72,24 @@ def train(args, env, agent, env_pool):
             total_steps += 1
             # clean up the no_backup folder every 100 steps
             if total_steps % 100 == 0:
-                os.system('./clean.sh')
+                clean_no_backup()
 
+
+
+def clean_no_backup(target_dir='no_backup'):
+    """Python version of clean.sh (os.system('./clean.sh') fails on Windows' cmd.exe)."""
+    os.makedirs(target_dir, exist_ok=True)
+    for entry in os.listdir(target_dir):
+        path = os.path.join(target_dir, entry)
+        if os.path.isdir(path):
+            shutil.rmtree(path, ignore_errors=True)
+        else:
+            try:
+                os.remove(path)
+            except OSError:
+                pass  # e.g. a file still locked by ngspice; it gets removed next time
+    os.makedirs(os.path.join(target_dir, 'output_files'), exist_ok=True)
+    os.makedirs(os.path.join(target_dir, 'output_netlists'), exist_ok=True)
 
 
 def warmup_exploration(args, env, env_pool, agent):
