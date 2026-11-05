@@ -174,7 +174,7 @@ class CircuitEnv(gym.Env):
         Note:
         - The observation is returned as a NumPy array of type float32.
         """
-        #super().reset(seed=seed)
+        super().reset(seed=seed)
         self.episode_steps = 0
         random_action = self.np_random.uniform(-1, 1, [self.n_actions])
         self.evaluate(random_action)

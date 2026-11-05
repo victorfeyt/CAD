@@ -1,13 +1,10 @@
 """
-Unit tests for CircuitEnv.action_refine.
-
 Run FROM the CAD/ directory:
     python -m unittest unit_test_env -v
 """
 
 import os
 import unittest
-
 import numpy as np
 
 # CircuitEnv builds its YAML path from os.getcwd(), so make sure we're in CAD/.
@@ -17,6 +14,7 @@ from circuit_env import CircuitEnv
 from unit_test_dut import load_rows, _num, REL_TOL, ABS_TOL
 
 REF_CSV = 'references.csv'
+
 
 class TestActionRefine(unittest.TestCase):
 
@@ -164,6 +162,71 @@ class TestNormalizeSpecs(unittest.TestCase):
         spec_dict = {name: float(goal) for name, goal in self.env.dict_targets.items()}
         spec_dict['phm'] = -45.0
         self.assertAlmostEqual(self.env.normalize_specs(spec_dict)['phm'], -1.0, places=12)
+
+
+class TestReset(unittest.TestCase):
+    """Runs ngspice (reset() simulates a random design). Checks that reset() returns a
+    valid observation vector of the right shape and type, and that it is reproducible
+    under a fixed seed."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.env = CircuitEnv(circuit_name='TwoStage', run_id='unittest', simulator='ngspice')
+
+    def test_observation_shape_and_type(self):
+        obs = self.env.reset()
+        self.assertIsInstance(obs, np.ndarray)
+        self.assertEqual(obs.shape, (self.env.obs_dim,))
+        self.assertEqual(obs.dtype, np.float32)
+
+    def test_same_seed_gives_same_observation(self):
+        obs1 = self.env.reset(seed=42)
+        params1 = dict(self.env.param_values)
+
+        # An unseeded reset in between moves the RNG on, so the second seeded reset
+        # only matches if the seed actually re-seeds it.
+        self.env.reset()
+
+        obs2 = self.env.reset(seed=42)
+        params2 = dict(self.env.param_values)
+
+        # Compare the sampled parameters too: if ngspice fails, both observations are
+        # the same fallback vector and would match regardless of the seed.
+        self.assertEqual(params1, params2)
+        np.testing.assert_array_equal(obs1, obs2)
+
+
+class TestStep(unittest.TestCase):
+    """Runs ngspice. Checks that step() returns a well-formed (obs, reward, done, info)
+    tuple, advances the episode counter, and ends the episode after max_steps_per_episode."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.env = CircuitEnv(circuit_name='TwoStage', run_id='unittest', simulator='ngspice')
+
+    def test_single_step_output(self):
+        self.env.reset(seed=0)
+        obs, reward, done, info = self.env.step(np.zeros(self.env.n_actions))
+
+        self.assertEqual(obs.shape, (self.env.obs_dim,))
+        self.assertEqual(obs.dtype, np.float32)
+        self.assertTrue(np.isfinite(reward))
+        # One step is far below max_steps_per_episode, so the episode can't be over yet.
+        self.assertFalse(done)
+        self.assertIn('goal_reached', info)
+        self.assertEqual(self.env.episode_steps, 1)
+
+    def test_done_after_max_steps(self):
+        # done must stay False for the first max_steps - 1 calls and flip to True on the last.
+        self.env.reset(seed=0)
+        max_steps = self.env.max_steps_per_episode
+        action = np.zeros(self.env.n_actions)
+        for i in range(1, max_steps):
+            _, _, done, _ = self.env.step(action)
+            with self.subTest(step=i):
+                self.assertFalse(done)
+        _, _, done, _ = self.env.step(action)
+        self.assertTrue(done)
 
 
 class TestRewardComputation(unittest.TestCase):
