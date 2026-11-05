@@ -261,8 +261,11 @@ class CircuitEnv(gym.Env):
             for spec in self.optimization_targets:
                 reward += self.spec_weights[spec] * margin(spec)
         else:
+            # Hard constraints still missed: the optimization targets count unclipped
+            # but at only 5% weight, so shrinking area/current can't buy back a missed
+            # constraint (this is the rule the references.csv rewards follow).
             for spec in self.optimization_targets:
-                reward += self.spec_weights[spec] * min(margin(spec), 0.0)
+                reward += 0.05 * self.spec_weights[spec] * margin(spec)
 
         return reward, hard_satisfied
 
