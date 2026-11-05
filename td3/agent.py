@@ -110,12 +110,8 @@ class TD3(object):
         action = action.flatten() + noise # Add noise to the action
         action = np.clip(action, -self.max_action, self.max_action) # Clip the action to be within valid range
 
-
-            
         return action
         
-        
-
 
     def update_parameters(self, memory_batch, update):
         """
@@ -158,6 +154,7 @@ class TD3(object):
 
         state, action, next_state, reward, not_done = memory_batch
 
+        # Critic network
         # build the target, no graph for the target, we don't want to backprop through the target
         with torch.no_grad(): # working with tensors here
             noise = (torch.randn_like(action) * self.policy_noise).clamp(-self.noise_clip, self.noise_clip) # Add clipped policy noise 
@@ -186,12 +183,6 @@ class TD3(object):
                 target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
             for param, target_param in zip(self.actor.parameters(), self.actor_target.parameters()):
                 target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
-
-
-
-            
-
 
 
     def save(self, filename):

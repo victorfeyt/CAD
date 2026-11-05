@@ -66,7 +66,7 @@ def train(args, env, agent, env_pool):
         while not done:
             action = agent.select_action(obs)
             next_state, reward, done, info = env.step(action)
-            env_pool.push(obs, action, reward, next_state, done)
+            env_pool.push(obs, action, reward, next_state, False)
             obs = next_state
             train_policy(args, env_pool, agent, total_steps)
             total_steps += 1
@@ -100,15 +100,15 @@ def warmup_exploration(args, env, env_pool, agent):
         while not done:
             action = env.action_space.sample()
             next_state, reward, done, info = env.step(action)
-            env_pool.push(obs, action, reward, next_state, done)
+            env_pool.push(obs, action, reward, next_state, False)
             obs = next_state
             step_counter += 1
     return step_counter
 
 
 def train_policy(args, env_pool, agent, total_steps):
-    state, action, reward, next_state, done = env_pool.sample(args.batch_size)
-    batch = (state, action, reward, next_state, done)
+    state, action, next_state, reward, not_done = env_pool.sample(args.batch_size)
+    batch = (state, action, next_state, reward, not_done)
     agent.update_parameters(memory_batch=batch, update=total_steps)
 
 

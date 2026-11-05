@@ -54,7 +54,6 @@ This includes the `base` run in `output_figs/`. Do not use its curves in the rep
 
 - **Batch order:** the replay buffer returns `state, action, next_state, reward, not_done`. `train_policy` in `td3_runner.py` names them in a different order. It only works because they are repacked in the same order straight away. Swapping names when unpacking gives no error, just a critic that learns garbage.
 - **`action_refine`:** the mapping (`np.arange` with max excluded, truncated index) was reverse-engineered from `references.csv`, where it matches 100/100 values. It is not confirmed by the TAs. A consequence is that the maximum of each parameter can never be reached.
-- **`done`:** it marks the 10-step time limit, not a true end state. The template still stops bootstrapping there. Worth one sentence in the report.
 
 ## 4. Still open
 
