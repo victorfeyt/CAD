@@ -131,10 +131,9 @@ class CircuitEnv(gym.Env):
         """
         norm_specs = {}
         for name, goal in self.dict_targets.items():
-            # phm is the only spec that can go negative. The formula breaks there: it blows
-            # up near spec = -goal and turns positive below it, so an unstable circuit would
-            # look like it beats the target. Treating negative specs as 0 gives -1 instead.
-            spec = max(spec_dict[name], 0.0)
+            spec = spec_dict[name]
+            if name == 'phm':
+                spec = max(spec, 0.0)   # PM <= 0 is unstable -> norm -1, the worst value
             norm_specs[name] = (spec - goal) / (spec + goal)
         return norm_specs
     
@@ -230,7 +229,7 @@ class CircuitEnv(gym.Env):
 
         done = self.episode_steps >= self.max_steps_per_episode
 
-        if self.env_steps % 10 == 0:
+        if done:
             self.score_history.append(self.score)
             plotLearning(self.score_history, self.run_id)
             self.score = 0.0

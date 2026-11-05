@@ -88,10 +88,17 @@ class TestSimulate(unittest.TestCase):
             self.skipTest(f'{REF_CSV} not found')
         for row in self.rows:
             params = {name: _num(name, row[name]) for name in self.env.dict_params}
+            # Reset per design: if simulate() raises, specs stays None instead of
+            # holding the previous design's results.
+            specs = None
             with self.subTest(design=row['name']):
                 specs = self.env.simulate(params)
                 self.assertEqual(set(specs), set(self.env.dict_targets))
+            if specs is None:
+                continue  # the failure is already recorded by the subTest above
             for name in self.env.dict_targets:
+                if name not in specs:
+                    continue  # already reported by the assertEqual above
                 got, ref = specs[name], float(row[name])
                 with self.subTest(design=row['name'], spec=name):
                     self.assertLessEqual(abs(got - ref), max(REL_TOL * abs(ref), ABS_TOL),
@@ -163,8 +170,8 @@ class TestRewardComputation(unittest.TestCase):
             reward, _ = self.env.reward_computation(self._norm_specs(row))
             ref = float(row['reward'])
             with self.subTest(design=row['name']):
-                self.assertLessEqual(abs(reward - ref), max(REL_TOL * abs(ref), ABS_TOL),
-                                     msg=f'reward: got {reward:.6g}, ref {ref:.6g}')
+                self.assertAlmostEqual(reward, ref, places=9,
+                                       msg=f'reward: got {reward:.6g}, ref {ref:.6g}')
 
     def test_hard_satisfied_flag(self):
         # A design that misses a higher-is-better hard constraint can't satisfy them all.
