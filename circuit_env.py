@@ -6,6 +6,7 @@ import yaml
 import math
 from ngspice_interface import DUT as DUT_NGSpice
 from utils.plotting import plotLearning, plot_running_maximum
+from utils.saving import save_solutions_csv
 
 class CircuitEnv(gym.Env):
     PER_LOW, PER_HIGH = -np.inf, +np.inf
@@ -30,6 +31,9 @@ class CircuitEnv(gym.Env):
 
         self.hard_constraints = yaml_data['hard_constraints']
         self.optimization_targets = yaml_data['optimization_targets']
+
+        # specs where a value below the goal is good (all others: higher is better)
+        self.lower_is_better = set(self.optimization_targets) | {'noise'}
 
         # number of input action components
         self.n_actions = len(self.dict_params)
@@ -58,6 +62,7 @@ class CircuitEnv(gym.Env):
 
         self.reward_history = []
         self.score_history = []
+        self.score = 0.0
 
         self.counter = 0
         self.pvt_corner = {'process': 'TT', 'voltage': 1.2, 'temp': 27}
@@ -71,13 +76,9 @@ class CircuitEnv(gym.Env):
         params = {}
         for i, (name, value) in enumerate(self.dict_params.items()):
             min_val, max_val, step = value
-            # Convert normalized action to actual parameter value
-            param_value = min_val + (action[i] + 1) / 2 * (max_val - min_val)
-            # Round to the nearest step size
-            param_value = round(param_value / step) * step
-            # Ensure the parameter value is within bounds
-            param_value = np.clip(param_value, min_val, max_val)
-            params[name] = param_value
+            grid = np.arange(min_val, max_val, step)
+            idx = int((action[i] + 1) / 2 * (len(grid) - 1))
+            params[name] = grid[idx]
 
         return params
 
@@ -113,7 +114,7 @@ class CircuitEnv(gym.Env):
 
     def normalize_specs(self, spec_dict):
         """
-        TODO: Normalize the specifications in `spec_dict` based on target specifications.
+        Normalize the specifications in `spec_dict` based on target specifications.
 
         This function normalizes the values in `spec_dict` by comparing them to the
         target specifications stored in `self.dict_targets`. The normalization is 
@@ -141,7 +142,7 @@ class CircuitEnv(gym.Env):
     
     def reset(self, *, seed=None, options=None):
         """
-        TODO: Reset the environment to an initial state and return the initial observation.
+        Reset the environment to an initial state and return the initial observation.
 
         Parameters:
             No mandatory input parameters (leave the input signature as is).
@@ -161,11 +162,16 @@ class CircuitEnv(gym.Env):
         Note:
         - The observation is returned as a NumPy array of type float32.
         """
-        pass
-    
+        super().reset(seed=seed)
+        self.episode_steps = 0
+        random_action = self.np_random.uniform(-1, 1, [self.n_actions])
+        self.evaluate(random_action)
+        self.score = 0.0
+        return np.array(list(self.cur_norm_specs.values()), dtype=np.float32)
+
     def step(self, action):
         """
-        TODO: Perform a single step in the environment using the given action.
+        Perform a single step in the environment using the given action.
 
         This function should:
         1. Evaluate the given action.
@@ -189,11 +195,39 @@ class CircuitEnv(gym.Env):
             - done (bool): A flag indicating whether the episode has ended.
             - info (dict): Additional information, including whether the goal state was reached.
         """
-        pass
+        self.evaluate(action)
+        reward, hard_satisfied = self.reward_computation(self.cur_norm_specs)
+        ob = np.array(list(self.cur_norm_specs.values()), dtype=np.float32)
+
+        self.reward_history.append(reward)
+        self.score += reward
+
+        fig_dir = os.path.join('.', 'output_figs', str(self.run_id))
+        os.makedirs(fig_dir, exist_ok=True)
+        os.makedirs(os.path.join('.', 'solutions'), exist_ok=True)
+
+        if hard_satisfied:
+            # .item(): store plain Python numbers, not np.int64(...) reprs, in the CSV
+            params = {name: value.item() for name, value in self.param_values.items()}
+            save_solutions_csv(self.run_id, self.env_steps, params, self.real_specs, reward)
+            plot_running_maximum(self.reward_history, self.run_id)
+
+        self.env_steps += 1
+        self.episode_steps += 1
+
+        done = self.episode_steps >= self.max_steps_per_episode
+
+        if self.env_steps % 10 == 0:
+            self.score_history.append(self.score)
+            plotLearning(self.score_history, self.run_id)
+            self.score = 0.0
+
+        info = {'goal_reached': hard_satisfied}
+        return ob, reward, done, info
     
     def reward_computation(self, norm_specs):
         """
-        TODO: Compute the reward based on normalized specifications and hard constraints.
+        Compute the reward based on normalized specifications and hard constraints.
 
         Args:
             norm_specs (dict): A dictionary containing normalized specifications.
@@ -211,8 +245,26 @@ class CircuitEnv(gym.Env):
             - If not, add weighted reward components of the optimization targets.
         4. Return the computed reward and the hard_satisfied flag.
         """
-        pass
+        reward = 0.0
+        hard_satisfied = False
+        
+        def margin(spec):
+            # > 0 means the spec beats its target, < 0 means it misses it
+            return -norm_specs[spec] if spec in self.lower_is_better else norm_specs[spec]
 
+        for spec in self.hard_constraints:
+            reward += self.spec_weights[spec] * min(margin(spec), 0.0)
+
+        if reward >= self.success_threshold:
+            hard_satisfied = True
+            reward += 0.3
+            for spec in self.optimization_targets:
+                reward += self.spec_weights[spec] * margin(spec)
+        else:
+            for spec in self.optimization_targets:
+                reward += self.spec_weights[spec] * min(margin(spec), 0.0)
+
+        return reward, hard_satisfied
 
 if __name__ == '__main__':
     env = CircuitEnv(
