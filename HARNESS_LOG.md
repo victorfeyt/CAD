@@ -1,6 +1,6 @@
 # LLM harness log
 
-Last updated: 2026-11-06. Companion to `KNOWN_ISSUES.md`. Status: **not yet run end to end**.
+Last updated: 2026-11-06. Companion to `KNOWN_ISSUES.md`. Status: **runs end to end, but too many tokens**.
 
 ## What exists
 | File | Purpose |
@@ -28,6 +28,20 @@ With `agy --output-format json` on `gemini-3.8-flash-low`:
 
 So each LLM call costs about 16,000 tokens, and subagents add calls. The four-agent setup is therefore likely to cost much more than a single agent.
 
+## First full run
+Command, from the project folder:
+
+    agy -p "Size the op-amp from scratch." --agent sizing-lead --model gemini-3.8-flash-low --output-format json --print-timeout 280s --settings '{"permissions":{"allow":["mcp(cad/*)"]}}'
+
+| Result | Value |
+|---|---|
+| FoM | 0.6644, feasible |
+| Simulations | 1 according to the report |
+| Tokens | 184,103 total, of which 12,393 thinking and 62,667 cache reads |
+| Runtime | 169 s |
+
+The hand-sizing recipe in `opamp-design` was calibrated with about 28 simulations outside the run. Those are not counted in the result above.
+
 ## Facts for setup
 - Subagents with `inheritCustomizations: true` reach the parent's `cad` server and share its state: both calls returned the same `run_id`.
 - Headless runs need `mcp(cad/*)` in `permissions.allow`. `--mode auto` is not available on this account.
@@ -36,4 +50,3 @@ So each LLM call costs about 16,000 tokens, and subagents add calls. The four-ag
 ## Open
 - `sizing_tools.py` calls `./clean.sh`, which stops a batch on Windows. `clean_no_backup()` in `td3_runner.py` works on both.
 - `sizing_tools.py` pushes `done`, while `td3_runner.py` pushes `False`.
-- No agent run has produced a design yet.

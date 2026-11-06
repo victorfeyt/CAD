@@ -13,18 +13,19 @@ description: Circuit knowledge for the two-stage Miller op-amp. Use when choosin
 
 ## Equations
 - Mirror: I = 30uA * (m*w/l of mn4 or mn5) / (m*w/l of mn3). Current = 30uA + Itail + I2.
-- UGBW = gm1 / (2 pi Cc), with gm1 about 15 * Itail/2 in moderate inversion.
-- Phase margin: second pole gm2/(2 pi CL) is below UGBW here, so Rc must add a left-half-plane zero near it: Rc about (CL + Cc) / (gm2 * Cc).
+- UGBW is about gm1 / (2 pi Cc), and gm/Id is only about 8 at these sizes. It also rises with res and I2.
+- Second pole gm2/(2 pi CL) is below UGBW, so Rc adds a left-half-plane zero: more res raises phm and ugbw but costs area.
 - Slew rate is measured on the rising edge only, so it is about Itail/Cc. The PMOS drives that edge, so I2 does not limit it.
-- Balance (low offset): (w/l of mp3 * mp3) / (w/l of mp1 * mp1) = 2 * I2 / Itail.
-- Area: Cc costs 0.33 um^2 per fF and Rc 1/14 um^2 per ohm, so these two dominate (0.6 pF = 200 um^2, 3 kohm = 214 um^2). Transistors cost m * w * l plus edges.
+- Output bias: m*w of mp3 about 0.83 * m*w of mn5, at equal l. If they mismatch by more than about 10%, gain collapses to about 200.
+- Area: Cc costs 0.33 um^2 per fF and Rc 1/14 um^2 per ohm, so these two dominate. Transistors cost m * w * l plus edges.
 - Gain rises with l and lower current. Noise falls with gm1.
 
 ## Hand-sizing recipe
-1. Pick Cc about 0.6 pF (small area) and l = 90n everywhere.
-2. Itail from UGBW above 100 MHz with margin, about 60 uA. I2 about 150 uA.
-3. Set the mirrors from Itail and I2, the input pair for high gm1, then mp3 from the balance rule.
-4. Set Rc from the zero equation with gm2 about 15 * I2.
+Calibrated rules for this process; compute the sizes from them.
+1. l = 90n everywhere. Bias diode m*w = 4 um. Mirror load m*w = 4 um.
+2. Cc = 0.5 pF, Rc = 4.5 kohm.
+3. Itail = 90 uA and I2 = 180 uA, set by the mirror ratios.
+4. Input pair m*w about 8-12 um. Then mp3 from the output bias rule.
 
 ## What to change
 | Failing | Change |
