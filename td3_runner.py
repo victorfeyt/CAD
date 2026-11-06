@@ -5,55 +5,56 @@ import torch
 import numpy as np
 from td3 import TD3, ReplayBuffer
 from circuit_env import CircuitEnv
+from utils.plotting import solutions2pareto
 from datetime import datetime
 
 def readParser():
     parser = argparse.ArgumentParser(description='TD3-based RL for Circuit Sizing')
 
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
-                        help='random seed (default: 123456)')
+                        help='random seed')
 
-    parser.add_argument('--noise_sigma', type=float, default=0.1,
+    parser.add_argument('--noise_sigma', type=float, default=0.2,
                         help='fixed noise sigma added to the deterministic action')
 
     parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
-                        help='discount factor for reward (default: 0.99)')
+                        help='discount factor for reward')
     
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
-                        help='target smoothing coefficient(τ) (default: 0.005)')
+                        help='target smoothing coefficient(τ)')
     
     parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
-                        help='Value target update per no. of updates per step (default: 1)')
+                        help='Value target update per no. of updates per step')
     
     parser.add_argument('--actor_update_interval', type=int, default=2, metavar='N',
-                        help='Actor target update per no. of updates per step (default: 2)')
+                        help='Actor target update per no. of updates per step')
     
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
                         help='hidden size (default: 256)')
     
-    parser.add_argument('--batch_size', type=int, default=128, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='hidden size')
     
-    parser.add_argument('--w', type=int, default=1000, metavar='N',
+    parser.add_argument('--w', type=int, default=1024, metavar='N',
                         help='number of warmup steps')
     
-    parser.add_argument('--T', type=int, default=10_000, metavar='N',
-                        help='total training steps (default: 10_000)')
+    parser.add_argument('--T', type=int, default=5000, metavar='N',
+                        help='total training steps')
     
-    parser.add_argument('--pi_lr', type=float, default=0.0003, metavar='G',
+    parser.add_argument('--pi_lr', type=float, default=0.0001, metavar='G',
                         help='learning rate')
     
     parser.add_argument('--q_lr', type=float, default=0.0003, metavar='G',
                         help='learning rate')
 
     parser.add_argument('--replay_size', type=int, default=1000000, metavar='N',
-                        help='size of replay buffer (default: 10000000)')
+                        help='size of replay buffer')
 
     parser.add_argument('--cuda', default=False, action="store_true",
-                        help='run on CUDA (default: True)')
+                        help='run on CUDA')
     
     parser.add_argument('--run_id', type=str, default=datetime.now().strftime('%Y-%m-%d--%H-%M-%S'), metavar='N',
-                        help='run identifier (default: current time)')
+                        help='run identifier')
     
     return parser.parse_args()
 
@@ -66,14 +67,13 @@ def train(args, env, agent, env_pool):
         while not done:
             action = agent.select_action(obs)
             next_state, reward, done, info = env.step(action)
-            env_pool.push(obs, action, reward, next_state, False)
+            env_pool.push(obs, action, reward, next_state, done)
             obs = next_state
             train_policy(args, env_pool, agent, total_steps)
             total_steps += 1
             # clean up the no_backup folder every 100 steps
             if total_steps % 100 == 0:
                 clean_no_backup()
-
 
 
 def clean_no_backup(target_dir='no_backup'):
@@ -100,7 +100,7 @@ def warmup_exploration(args, env, env_pool, agent):
         while not done:
             action = env.action_space.sample()
             next_state, reward, done, info = env.step(action)
-            env_pool.push(obs, action, reward, next_state, False)
+            env_pool.push(obs, action, reward, next_state, done)
             obs = next_state
             step_counter += 1
     return step_counter
@@ -128,6 +128,12 @@ def main(args=None):
     env_pool = ReplayBuffer(state_dim, action_dim, max_size=args.replay_size)
     # Training
     train(args, env, agent, env_pool)
+    # Pareto front (area vs. current) of all solutions that satisfied the hard constraints
+    solutions_csv = f'./solutions/{args.run_id}.csv'
+    if os.path.isfile(solutions_csv):
+        solutions2pareto(solutions_csv, args.run_id, show_all=True)
+    else:
+        print(f'No solutions file at {solutions_csv}; skipping Pareto plot.')
 
 
 if __name__ == "__main__":
