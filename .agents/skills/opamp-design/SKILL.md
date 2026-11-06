@@ -13,19 +13,18 @@ description: Circuit knowledge for the two-stage Miller op-amp. Use when choosin
 
 ## Equations
 - Mirror: I = 30uA * (m*w/l of mn4 or mn5) / (m*w/l of mn3). Current = 30uA + Itail + I2.
-- UGBW is about gm1 / (2 pi Cc), and gm/Id is only about 8 at these sizes. It also rises with res and I2.
-- Second pole gm2/(2 pi CL) is below UGBW, so Rc adds a left-half-plane zero: more res raises phm and ugbw but costs area.
+- UGBW = gm1 / (2 pi Cc), with gm1 = (gm/Id) * Itail/2.
+- Second pole = gm2 / (2 pi CL). Rc moves the zero: zero = 1 / (2 pi Cc (Rc - 1/gm2)). Placing it near the second pole recovers phase margin.
 - Slew rate is measured on the rising edge only, so it is about Itail/Cc. The PMOS drives that edge, so I2 does not limit it.
-- Output bias: m*w of mp3 about 0.83 * m*w of mn5, at equal l. If they mismatch by more than about 10%, gain collapses to about 200.
-- Area: Cc costs 0.33 um^2 per fF and Rc 1/14 um^2 per ohm, so these two dominate. Transistors cost m * w * l plus edges.
+- Balance (low offset): (m*w/l of mp3) / (m*w/l of mp1) = 2 * I2 / Itail. If gain is far too low, the second stage is out of balance: adjust mp3 against mn5.
+- Area: Cc costs 0.33 um^2 per fF and Rc 1/14 um^2 per ohm. Transistors cost m * w * l plus edges.
 - Gain rises with l and lower current. Noise falls with gm1.
 
-## Hand-sizing recipe
-Calibrated rules for this process; compute the sizes from them.
-1. l = 90n everywhere. Bias diode m*w = 4 um. Mirror load m*w = 4 um.
-2. Cc = 0.5 pF, Rc = 4.5 kohm.
-3. Itail = 90 uA and I2 = 180 uA, set by the mirror ratios.
-4. Input pair m*w about 8-12 um. Then mp3 from the output bias rule.
+## Hand-sizing method
+1. Pick a small Cc, because it costs area. Check Itail >= slew rate * Cc.
+2. From UGBW and Cc, find gm1, then Itail. Assume gm/Id of 10 to 15 for a first design, and correct it from the measured ugbw.
+3. Pick I2 to set gm2, keeping total current low. Set Rc from the zero equation.
+4. Set the mirrors from Itail and I2, size the input pair for gm1, then set mp3 from the balance rule.
 
 ## What to change
 | Failing | Change |

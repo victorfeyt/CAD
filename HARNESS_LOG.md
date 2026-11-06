@@ -40,7 +40,7 @@ Command, from the project folder:
 | Tokens | 184,103 total, of which 12,393 thinking and 62,667 cache reads |
 | Runtime | 169 s |
 
-The hand-sizing recipe in `opamp-design` was calibrated with about 28 simulations outside the run. Those are not counted in the result above.
+**This run is not a valid from-scratch result.** It used a recipe calibrated with about 28 simulations outside the run. The jury tests the LLM with no history and no staged values, so those numbers were removed from `opamp-design`, which now holds only general theory and a method. No run has been done with this version, and the first design will likely be worse.
 
 ## Facts for setup
 - Subagents with `inheritCustomizations: true` reach the parent's `cad` server and share its state: both calls returned the same `run_id`.
