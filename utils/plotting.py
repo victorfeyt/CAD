@@ -37,6 +37,18 @@ def plot_running_maximum(data, run_id):
     # change the font size
     plt.rcParams.update({'font.size': 18})
     plt.plot(running_max_values)
+
+    # mark and label the final maximum at the first simulation that reached it
+    best_idx = int(np.argmax(data))
+    best_value = data[best_idx]
+    ax = plt.gca()
+    ax.plot(best_idx, best_value, 'o', markersize=10, color='C0', markeredgecolor='white', zorder=3)
+    ax.annotate(f'Max reward: {best_value:.4f}\n(simulation {best_idx})',
+                xy=(best_idx, best_value), xytext=(0.95, 0.45), textcoords='axes fraction',
+                ha='right', va='center', multialignment='center', fontsize=16,
+                bbox=dict(boxstyle='round,pad=0.3', fc='white', ec='0.7'),
+                arrowprops=dict(arrowstyle='->', color='0.3', lw=1.5))
+
     plt.xlabel('# Simulation')
     plt.ylabel('Maximum FoM Reached')
     # plt.legend()
@@ -69,12 +81,13 @@ def plot_pareto_front(solutions: List[Dict[str, float]], fname, show_all=False) 
     plt.rcParams.update({'font.size': 18})
 
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.scatter(pareto_area, pareto_current, c='blue', s=100, label='Pareto Front')
     if show_all:
-        ax.scatter(area_scaled, current_scaled, c='gray', alpha=0.6, s=100, label='Non-Pareto Solutions')
-    
+        ax.scatter(area_scaled, current_scaled, c='gray', alpha=0.4, s=60, label='Non-Pareto Solutions', zorder=1)
+    ax.scatter(pareto_area, pareto_current, c='blue', s=100, edgecolors='white', label='Pareto Front', zorder=3)
+
     sorted_indices = np.argsort(pareto_area)
-    ax.plot(pareto_area[sorted_indices], pareto_current[sorted_indices], 'b--', linewidth=2)
+    ax.plot(pareto_area[sorted_indices], pareto_current[sorted_indices], 'b--', linewidth=2, zorder=2)
+    ax.legend(fontsize=14)
     
     ax.set_xlabel('Active Area (μm²)', fontsize=18)
     ax.set_ylabel('Total Current (μA)', fontsize=18)

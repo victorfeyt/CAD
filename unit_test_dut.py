@@ -1,37 +1,28 @@
 """
-Unit test for the CAD project, driven by references.csv.
+Run FROM the CAD/ directory:
+    python -m unittest unit_test_dut -v
 
-references.csv is "transposed": each ROW is an attribute (param_mp1, spec_gain,
-norm_gain, reward, ...) with its unit, and each COLUMN after 'Unit' is one design
-(Design 1, Design 2, ...). load_rows() turns it into one dict per design: its 20 sizing parameters, the 7
-specs the TAs measured for it, and the reward they computed. This test checks
-your code reproduces both.
-
-Run FROM the CAD/ directory (the working dir the wrapper + netlist paths assume):
-    cd CAD
-    python test_dut.py
-
-It runs two INDEPENDENT checks:
-
-  PART A - measurements (Milestone 1, needs ngspice):
-      your DUT, given a row's params, must measure specs close to that row's specs.
-
-  PART B - reward (Milestone 2, NO simulator):
-      your circuit_env, given a row's *reference* specs, must compute a reward
-      close to that row's reward. Because it uses the TAs' specs as input, a
-      mismatch here is purely a reward-logic bug, not a measurement bug.
-
-Part B is skipped automatically until normalize_specs / reward_computation are
-implemented (while they're stubs they return None).
+TestMeasureMetrics and TestReward are driven by references.csv. That file is
+"transposed": each ROW is an attribute (param_mp1, spec_gain, norm_gain, reward, ...)
+with its unit, and each COLUMN after 'Unit' is one design (Design 1, Design 2, ...).
+load_rows() turns it into one dict per design. unit_test_env.py imports load_rows, _num,
+REL_TOL and ABS_TOL from here.
 """
 
 import os
 import csv
-import math
+import unittest
+import numpy as np
 
-CSV_PATH = os.environ.get("REF_CSV", "references.csv")
-REL_TOL  = 0.05   # 5% relative tolerance
-ABS_TOL  = 1e-12  # floor so near-zero values (e.g. res=0) don't blow up rel error
+# The DUT and CircuitEnv build their paths from os.getcwd(), so make sure we're in CAD/.
+os.chdir(os.path.dirname(os.path.abspath(__file__)))
+
+from circuit_env import CircuitEnv
+from ngspice_interface.dut_testbench import DUT
+
+REF_CSV = os.environ.get('REF_CSV', 'references.csv')
+REL_TOL = 0.02   # 2% relative tolerance
+ABS_TOL = 1e-12  # floor so near-zero values (e.g. res=0) don't blow up rel error
 
 # The 20 sizing parameter columns (names must match the CSV headers and the YAML).
 PARAM_COLS = [
@@ -54,14 +45,10 @@ SPEC_COLS = {
 }
 REWARD_COL = 'reward'   # set to None if the CSV has no reward column
 
-# helper for correct data type
+
 def _num(name, s):
     """m* params are integer multiplicities; everything else is float."""
     return int(float(s)) if name.startswith('m') else float(s)
-
-# helper for accuracy check
-def _close(got, ref):
-    return abs(got - ref) <= max(REL_TOL * abs(ref), ABS_TOL)
 
 
 def load_rows(path):
@@ -69,10 +56,10 @@ def load_rows(path):
     Read the transposed references.csv and return one dict per design, e.g.
         {'name': 'Design 1', 'mp1': '6', ..., 'gain': '817.2', ..., 'reward': '...'}
     The 'param_' and 'spec_' prefixes are stripped; other attributes
-    (action_*, norm_*, reward) keep their name as-is.
+    (action_*, norm_*, reward) keep their name as-is. Returns None if the file
+    doesn't exist, so the tests can skip.
     """
     if not os.path.isfile(path):
-        print(f"[skip] {path} not found")
         return None
     with open(path, newline='') as f:
         table = list(csv.reader(f))
@@ -91,81 +78,123 @@ def load_rows(path):
             row[attr] = value.strip()
     return rows
 
-# unit test to check the measurements
-def part_a_measurements(rows):
-    print("\n=== PART A: measurements vs reference (needs ngspice) ===")
-    from ngspice_interface.dut_testbench import DUT
-    yaml_path = os.path.join(os.getcwd(), 'ngspice_interface',
-                             'files', 'yaml_files', 'TwoStage.yaml')
-    dut = DUT(yaml_path)
 
-    failures = []
-    for i, row in enumerate(rows):
-        params = {p: _num(p, row[p]) for p in PARAM_COLS}
-        # new netlist
-        netlist = dut.create_new_netlist(params, process='TT', temp_pvt=27, vdd=1.2)
-        # simulate the new netlist
-        info = dut.simulate(netlist)
-        if info != 0:
-            print(f"  {row['name']}: ngspice FAILED (info={info})")
-            failures.append((i, 'ngspice'))
-            continue
-        # measure the specs of simulation
-        specs = dut.measure_metrics()
-        for key, col in SPEC_COLS.items():
-            if col not in row:
-                continue
-            got, ref = float(specs[key]), float(row[col]) # compare measurement with reference
-            if not _close(got, ref): # check whether error is in tolerance
-                print(f"  {row['name']}: {key:9s} got {got:.6g}  ref {ref:.6g}  MISMATCH")
-                failures.append((i, key))
-    print(f"Part A: {len(rows)} designs, {len(failures)} mismatches.")
-    return failures
+class TestMeasureMetrics(unittest.TestCase):
+    """Part A (Milestone 1). Needs ngspice. Simulates each design's param_* with the DUT
+    directly (bypassing CircuitEnv) and checks every measured spec against that design's
+    spec_* row."""
 
+    @classmethod
+    def setUpClass(cls):
+        yaml_path = os.path.join(os.getcwd(), 'ngspice_interface',
+                                 'files', 'yaml_files', 'TwoStage.yaml')
+        cls.dut = DUT(yaml_path)
+        cls.rows = load_rows(REF_CSV)
 
-def part_b_reward(rows):
-    print("\n=== PART B: reward vs reference (no simulator) ===")
-    if REWARD_COL is None or REWARD_COL not in rows[0]:
-        print("  [skip] no reward column in the CSV.")
-        return []
-    from circuit_env import CircuitEnv
-    env = CircuitEnv(circuit_name='TwoStage', run_id='unittest',
-                     simulator='ngspice', success_threshold=0.0)
-
-    # Probe whether the reward path is implemented yet (stubs return None).
-    probe_specs = {k: float(rows[0][c]) for k, c in SPEC_COLS.items() if c in rows[0]}
-    norm = env.normalize_specs(probe_specs)
-    if norm is None:
-        print("  [skip] normalize_specs not implemented yet.")
-        return []
-    if env.reward_computation(norm) is None:
-        print("  [skip] reward_computation not implemented yet.")
-        return []
-
-    failures = []
-    for i, row in enumerate(rows):
-        spec_dict = {k: float(row[c]) for k, c in SPEC_COLS.items() if c in row}
-        norm = env.normalize_specs(spec_dict)
-        reward, _hard = env.reward_computation(norm)
-        ref = float(row[REWARD_COL])
-        if not _close(reward, ref):
-            print(f"  {row['name']}: reward got {reward:.6g}  ref {ref:.6g}  MISMATCH")
-            failures.append(i)
-    print(f"Part B: {len(rows)} designs, {len(failures)} reward mismatches.")
-    return failures
+    def test_matches_references_csv(self):
+        if not self.rows:
+            self.skipTest(f'{REF_CSV} not found')
+        for row in self.rows:
+            params = {name: _num(name, row[name]) for name in PARAM_COLS}
+            # Reset per design: if a step below fails, specs stays None instead of
+            # holding the previous design's results.
+            specs = None
+            with self.subTest(design=row['name']):
+                netlist = self.dut.create_new_netlist(params, process='TT',
+                                                      temp_pvt=27, vdd=1.2)
+                info = self.dut.simulate(netlist)
+                self.assertEqual(info, 0, msg='ngspice failed')
+                specs = self.dut.measure_metrics()
+            if specs is None:
+                continue  # the failure is already recorded by the subTest above
+            for key, col in SPEC_COLS.items():
+                if col not in row:
+                    continue  # the CSV has no reference value for this spec
+                with self.subTest(design=row['name'], spec=key):
+                    got, ref = float(specs[key]), float(row[col])
+                    self.assertLessEqual(abs(got - ref), max(REL_TOL * abs(ref), ABS_TOL),
+                                         msg=f'{key}: got {got:.6g}, ref {ref:.6g}')
 
 
-def main():
-    rows = load_rows(CSV_PATH)
-    if not rows:
-        return
-    print(f"Loaded {len(rows)} reference designs from {CSV_PATH}.")
-    fails_a = part_a_measurements(rows)
-    fails_b = part_b_reward(rows)
-    assert not fails_a, f"measurement mismatches: {fails_a}"
-    assert not fails_b, f"reward mismatches on designs: {fails_b}"
-    print("\nAll reference designs passed.")
+class TestReward(unittest.TestCase):
+    """Part B (Milestone 2). No simulator. Feeds each design's *reference* spec_* through
+    normalize_specs() and reward_computation() and checks the result against that design's
+    reward row. The input is the TAs' specs, so a mismatch here is purely a reward-logic
+    bug, not a measurement bug."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.env = CircuitEnv(circuit_name='TwoStage', run_id='unittest',
+                             simulator='ngspice', success_threshold=0.0)
+        cls.rows = load_rows(REF_CSV)
+
+    def _spec_dict(self, row):
+        return {key: float(row[col]) for key, col in SPEC_COLS.items() if col in row}
+
+    def test_matches_references_csv(self):
+        if not self.rows:
+            self.skipTest(f'{REF_CSV} not found')
+        if REWARD_COL is None or REWARD_COL not in self.rows[0]:
+            self.skipTest(f'no reward column in {REF_CSV}')
+        # Skip while normalize_specs / reward_computation are still stubs that return None.
+        norm_specs = self.env.normalize_specs(self._spec_dict(self.rows[0]))
+        if norm_specs is None:
+            self.skipTest('normalize_specs not implemented yet')
+        if self.env.reward_computation(norm_specs) is None:
+            self.skipTest('reward_computation not implemented yet')
+
+        for row in self.rows:
+            norm_specs = self.env.normalize_specs(self._spec_dict(row))
+            reward, _ = self.env.reward_computation(norm_specs)
+            ref = float(row[REWARD_COL])
+            with self.subTest(design=row['name']):
+                self.assertLessEqual(abs(reward - ref), max(REL_TOL * abs(ref), ABS_TOL),
+                                     msg=f'reward: got {reward:.6g}, ref {ref:.6g}')
 
 
-if __name__ == "__main__":
-    main()
+class TestGain(unittest.TestCase):
+    """No simulator. Feeds hand-made AC responses straight into find_dc_gain() (bypassing
+    ngspice and parse_outputs) and checks it returns |vout| at the first sweep point."""
+
+    @classmethod
+    def setUpClass(cls):
+        yaml_path = os.path.join(os.getcwd(), 'ngspice_interface',
+                                 'files', 'yaml_files', 'TwoStage.yaml')
+        cls.dut = DUT(yaml_path)
+
+    def test_real_positive_vout(self):
+        # In-phase output: the gain is just vout at the first (lowest-frequency) point.
+        vout = np.array([100, 80, 10], dtype=complex)
+        self.assertAlmostEqual(self.dut.find_dc_gain(vout), 100.0, places=12)
+
+    def test_inverting_vout_gives_positive_gain(self):
+        # An inverting amplifier has vout < 0 at DC (180 deg phase). Gain is a magnitude,
+        # so -150 V/V must give 150, not -150.
+        vout = np.array([-150, -120, -40], dtype=complex)
+        self.assertAlmostEqual(self.dut.find_dc_gain(vout), 150.0, places=12)
+
+    def test_complex_vout_gives_magnitude(self):
+        # With some phase shift at the first point, the gain is |3 + 4j| = 5, not the real
+        # part 3, and it comes back as a real float rather than a complex number.
+        gain = self.dut.find_dc_gain(np.array([3 + 4j, 1 + 1j]))
+        self.assertIsInstance(gain, float)
+        self.assertAlmostEqual(gain, 5.0, places=12)
+
+    def test_only_first_point_is_used(self):
+        # Higher-frequency points must not leak in, even when they are larger (with a low
+        # phase margin, the peak of the response can exceed the DC gain).
+        vout = np.array([2, 1000, -1e6], dtype=complex)
+        self.assertAlmostEqual(self.dut.find_dc_gain(vout), 2.0, places=12)
+
+    def test_single_pole_sweep(self):
+        # Realistic input: an inverting OTA with A0 = 817 V/V and its pole at 350 kHz (close
+        # to Design 1), sampled like the netlist's 'ac dec 10 1 1T'. The first point is at
+        # 1 Hz, far below the pole, so the measured gain equals A0 to within 1 ppm.
+        a0, f_pole = 817.0, 350e3
+        freq = np.logspace(0, 12, 121)
+        vout = -a0 / (1 + 1j * freq / f_pole)
+        self.assertAlmostEqual(self.dut.find_dc_gain(vout), a0, delta=1e-6 * a0)
+
+
+if __name__ == '__main__':
+    unittest.main(verbosity=2)

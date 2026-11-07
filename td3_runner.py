@@ -14,10 +14,10 @@ def readParser():
     parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed')
 
-    parser.add_argument('--noise_sigma', type=float, default=0.2,
+    parser.add_argument('--noise_sigma', type=float, default=0.1,
                         help='fixed noise sigma added to the deterministic action')
 
-    parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
+    parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
                         help='discount factor for reward')
     
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
@@ -26,7 +26,7 @@ def readParser():
     parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                         help='Value target update per no. of updates per step')
     
-    parser.add_argument('--actor_update_interval', type=int, default=2, metavar='N',
+    parser.add_argument('--actor_update_interval', type=int, default=1, metavar='N',
                         help='Actor target update per no. of updates per step')
     
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
@@ -35,13 +35,13 @@ def readParser():
     parser.add_argument('--batch_size', type=int, default=256, metavar='N',
                         help='hidden size')
     
-    parser.add_argument('--w', type=int, default=1024, metavar='N',
+    parser.add_argument('--w', type=int, default=256, metavar='N',
                         help='number of warmup steps')
     
     parser.add_argument('--T', type=int, default=5000, metavar='N',
                         help='total training steps')
     
-    parser.add_argument('--pi_lr', type=float, default=0.0001, metavar='G',
+    parser.add_argument('--pi_lr', type=float, default=0.0003, metavar='G',
                         help='learning rate')
     
     parser.add_argument('--q_lr', type=float, default=0.0003, metavar='G',

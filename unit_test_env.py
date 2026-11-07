@@ -261,8 +261,6 @@ class TestRewardComputation(unittest.TestCase):
                 self.assertIsInstance(hard_satisfied, (bool, np.bool_))
 
     def test_matches_references_csv(self):
-        # Same tolerance as unit_test_dut Part B: the TA rewards are only reproducible
-        # to within a few percent, so REL_TOL rather than a digit-exact comparison.
         if not self.rows:
             self.skipTest(f'{REF_CSV} not found')
         for row in self.rows:
