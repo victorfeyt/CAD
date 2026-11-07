@@ -11,13 +11,13 @@ from datetime import datetime
 def readParser():
     parser = argparse.ArgumentParser(description='TD3-based RL for Circuit Sizing')
 
-    parser.add_argument('--seed', type=int, default=1, metavar='N',
+    parser.add_argument('--seed', type=int, default=123456, metavar='N',
                         help='random seed')
 
     parser.add_argument('--noise_sigma', type=float, default=0.1,
                         help='fixed noise sigma added to the deterministic action')
 
-    parser.add_argument('--gamma', type=float, default=0.99, metavar='G',
+    parser.add_argument('--gamma', type=float, default=0.9, metavar='G',
                         help='discount factor for reward')
     
     parser.add_argument('--tau', type=float, default=0.005, metavar='G',
@@ -38,7 +38,7 @@ def readParser():
     parser.add_argument('--w', type=int, default=1024, metavar='N',
                         help='number of warmup steps')
     
-    parser.add_argument('--T', type=int, default=1000, metavar='N',
+    parser.add_argument('--T', type=int, default=5000, metavar='N',
                         help='total training steps')
     
     parser.add_argument('--pi_lr', type=float, default=0.0001, metavar='G',
