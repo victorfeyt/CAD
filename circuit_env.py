@@ -12,7 +12,7 @@ class CircuitEnv(gym.Env):
     PER_LOW, PER_HIGH = -np.inf, +np.inf
     
     def __init__(self, config=None, circuit_name='TwoStage', run_id='rllib_baseline',
-                 success_threshold=0.0, simulator='ngspice'):
+                 success_threshold=0.0, simulator='ngspice', seed=None):
         self.run_id = run_id
         self.max_steps_per_episode = 10
         self.env_steps = 0
@@ -56,6 +56,14 @@ class CircuitEnv(gym.Env):
         obs_high = np.array([CircuitEnv.PER_HIGH]*self.obs_dim, dtype=np.float32)
         obs_low = np.array([CircuitEnv.PER_LOW]*self.obs_dim, dtype=np.float32)
         self.observation_space = Box(low=obs_low, high=obs_high)
+
+        # Seed the env's own RNGs, which gymnasium otherwise seeds from OS entropy:
+        # self.np_random draws the random initial design in reset(), the action-space RNG
+        # the warm-up actions. Different seeds (same split as sizing_tools.py), or both would
+        # draw the same designs. gym.Env.reset() only seeds the RNG; it doesn't simulate.
+        if seed is not None:
+            self.action_space.seed(seed)
+            super().reset(seed=seed + 1)
 
         # spec reward weights
         self.spec_weights = yaml_data['spec_weights']
