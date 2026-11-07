@@ -1,6 +1,6 @@
 # Op-amp sizing harness
 
-Goal: size the two-stage Miller op-amp with the `cad` MCP tools. Tokens and simulations are both scored, so be brief.
+Goal: size the two-stage Miller op-amp with the `cad` MCP tools. A feasible design comes first. Tokens and simulations are also scored, so be brief.
 
 Hard constraints: gain >= 200, noise <= 0.03, phm >= 60, slewRate >= 30, ugbw >= 100e6.
 Then minimise area (target 2e-9) and current (target 2e-4). Higher reward is better; satisfactory designs score above unsatisfactory ones in most cases, so check `hard_constraints_satisfied`.
