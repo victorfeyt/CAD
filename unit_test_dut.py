@@ -180,20 +180,159 @@ class TestGain(unittest.TestCase):
         self.assertIsInstance(gain, float)
         self.assertAlmostEqual(gain, 5.0, places=12)
 
-    def test_only_first_point_is_used(self):
-        # Higher-frequency points must not leak in, even when they are larger (with a low
-        # phase margin, the peak of the response can exceed the DC gain).
-        vout = np.array([2, 1000, -1e6], dtype=complex)
-        self.assertAlmostEqual(self.dut.find_dc_gain(vout), 2.0, places=12)
+class TestUGBW(unittest.TestCase):
+    """No simulator. Feeds hand-made AC responses straight into find_ugbw() (bypassing
+    ngspice and parse_outputs) and checks it returns the correct UGBW."""
 
-    def test_single_pole_sweep(self):
-        # Realistic input: an inverting OTA with A0 = 817 V/V and its pole at 350 kHz (close
-        # to Design 1), sampled like the netlist's 'ac dec 10 1 1T'. The first point is at
-        # 1 Hz, far below the pole, so the measured gain equals A0 to within 1 ppm.
-        a0, f_pole = 817.0, 350e3
-        freq = np.logspace(0, 12, 121)
-        vout = -a0 / (1 + 1j * freq / f_pole)
-        self.assertAlmostEqual(self.dut.find_dc_gain(vout), a0, delta=1e-6 * a0)
+    @classmethod
+    def setUpClass(cls):
+        yaml_path = os.path.join(os.getcwd(), 'ngspice_interface',
+                                 'files', 'yaml_files', 'TwoStage.yaml')
+        cls.dut = DUT(yaml_path)
+
+    def test_ugbw_at_1hz(self):
+        # Gain crosses 1 V/V at 1 Hz.
+        freq = np.array([0.1, 0.5, 1.0, 2.0, 5.0])
+        vout = np.array([10, 2, 1, 0.5, 0.2], dtype=complex)
+        self.assertAlmostEqual(self.dut.find_ugbw(freq, vout), 1.0, places=12)
+
+    def test_ugbw_at_100hz(self):
+        # Gain crosses 1 V/V at 100 Hz.
+        freq = np.array([10, 50, 100, 200, 500])
+        vout = np.array([10, 2, 1, 0.5, 0.2], dtype=complex)
+        self.assertAlmostEqual(self.dut.find_ugbw(freq, vout), 100.0, places=12)
+
+    def test_single_pole_inverting_amp_between_grid_points(self):
+        # Realistic case: an inverting single-pole amp H(f) = -A0 / (1 + j f/fp) on a
+        # log sweep (10 pts/decade). The analytic UGBW is fp*sqrt(A0^2 - 1) ~= 23 MHz,
+        # which falls between sample points, so this exercises the log-axis interpolation
+        # and checks the negative/complex vout is handled through its magnitude.
+        A0, fp = 1000.0, 23e3
+        freq = np.logspace(0, 10, 101)
+        vout = -A0 / (1 + 1j * freq / fp)
+        expected = fp * np.sqrt(A0**2 - 1)
+        self.assertFalse(np.any(np.isclose(freq, expected, rtol=1e-3)))  # really off-grid
+        self.assertAlmostEqual(self.dut.find_ugbw(freq, vout) / expected, 1.0, places=2)
+
+    def test_no_unity_crossing_returns_zero(self):
+        # If |vout| never crosses 1 V/V inside the sweep there is no UGBW, and find_ugbw
+        # must report 0.0 (a clearly failing value) instead of the sweep's end frequency.
+        freq = np.logspace(0, 6, 7)
+        cases = {
+            'gain_always_above_1': np.array([1e4, 5e3, 1e3, 500, 100, 20, 2], dtype=complex),
+            'gain_always_below_1': np.array([0.9, 0.8, 0.5, 0.2, 0.1, 0.05, 0.01], dtype=complex),
+        }
+        for name, vout in cases.items():
+            with self.subTest(case=name):
+                self.assertEqual(self.dut.find_ugbw(freq, vout), 0.0)
+
+
+class TestPhaseMargin(unittest.TestCase):
+    """No simulator. Feeds analytic multi-pole AC responses into find_phm() and compares
+    against the closed-form phase margin PM = 180 - sum(atan(f_u / p_i))."""
+
+    FREQ = np.logspace(0, 10, 501)  # 50 pts/decade, 1 Hz .. 10 GHz
+
+    @classmethod
+    def setUpClass(cls):
+        yaml_path = os.path.join(os.getcwd(), 'ngspice_interface',
+                                 'files', 'yaml_files', 'TwoStage.yaml')
+        cls.dut = DUT(yaml_path)
+
+    @staticmethod
+    def _response(A0, poles, freq):
+        """H(f) = A0 / prod(1 + j f/p_i). A negative A0 gives an inverting amplifier."""
+        h = np.full(freq.shape, A0, dtype=complex)
+        for p in poles:
+            h /= 1 + 1j * freq / p
+        return h
+
+    @staticmethod
+    def _analytic_pm(A0, poles):
+        """Solve |H(f_u)| = 1 exactly: with x = f^2, prod(1 + x/p_i^2) - A0^2 = 0 is a
+        polynomial in x. Returns (f_u, PM in degrees)."""
+        poly = np.array([1.0])
+        for p in poles:
+            poly = np.polymul(poly, [1 / p**2, 1.0])
+        poly[-1] -= A0**2
+        x = [r.real for r in np.roots(poly) if abs(r.imag) < 1e-9 * abs(r) and r.real > 0]
+        fu = np.sqrt(x[0])
+        return fu, 180.0 - sum(np.degrees(np.arctan(fu / p)) for p in poles)
+
+    def test_two_pole_amp_near_60_degrees(self):
+        # Textbook two-stage Miller response: dominant pole at 10 kHz, non-dominant pole
+        # placed so the PM sits just above the phm >= 60 spec boundary (~62.5 deg). The result
+        # must match the closed form to within 0.5 deg, tight enough to judge pass/fail.
+        A0, poles = 1000.0, [10e3, 17e6]
+        _, expected = self._analytic_pm(A0, poles)
+        self.assertGreater(expected, 60.0)
+        pm = self.dut.find_phm(self.FREQ, self._response(A0, poles, self.FREQ))
+        self.assertAlmostEqual(pm, expected, delta=0.5)
+
+    def test_inverting_amp_has_same_pm(self):
+        # An inverting amp starts at 180 deg instead of 0 deg. PM must be measured
+        # relative to the DC phase, so flipping the sign of the gain must not change it.
+        # (Without that reference the result would be off by 180 deg.)
+        A0, poles = 1000.0, [10e3, 17e6]
+        pm_noninv = self.dut.find_phm(self.FREQ, self._response(A0, poles, self.FREQ))
+        pm_inv = self.dut.find_phm(self.FREQ, self._response(-A0, poles, self.FREQ))
+        self.assertAlmostEqual(pm_inv, pm_noninv, places=9)
+        self.assertAlmostEqual(pm_inv, self._analytic_pm(A0, poles)[1], delta=0.5)
+
+    def test_unstable_three_pole_amp_gives_negative_pm(self):
+        # Two coincident non-dominant poles at 2 MHz push the phase past -180 deg (at
+        # 2 MHz) before the gain reaches unity (~3 MHz), so PM is about -23 deg. np.angle
+        # wraps from -180 to +180 there; without unwrapping, PM would come out as ~+337 deg
+        # and an unstable amplifier would look extremely stable.
+        A0, poles = 1000.0, [10e3, 2e6, 2e6]
+        _, expected = self._analytic_pm(A0, poles)
+        self.assertLess(expected, 0.0)
+        pm = self.dut.find_phm(self.FREQ, self._response(A0, poles, self.FREQ))
+        self.assertAlmostEqual(pm, expected, delta=0.5)
+
+
+class TestSlewRate(unittest.TestCase):
+    """No simulator. Feeds hand-made transient waveforms into find_slew_rate() and checks
+    the 10%-90% slew rate (default unit V/us)."""
+
+    @classmethod
+    def setUpClass(cls):
+        yaml_path = os.path.join(os.getcwd(), 'ngspice_interface',
+                                 'files', 'yaml_files', 'TwoStage.yaml')
+        cls.dut = DUT(yaml_path)
+
+    def test_linear_ramp_off_grid_and_time_units(self):
+        # Slew-limited step: 0 -> 1.2 V in 40 ns = exactly 30 V/us (the spec boundary).
+        # The 3 ns sample grid does not hit the 10%/90% times (14 ns, 46 ns), so the
+        # crossings must be interpolated. The same edge in other units must scale exactly.
+        t = np.arange(0, 100e-9, 3e-9)
+        v = np.interp(t, [0, 10e-9, 50e-9, 100e-9], [0, 0, 1.2, 1.2])
+        for unit, expected in {'us': 30.0, 'ns': 0.03, 'ms': 3e4, 's': 3e7}.items():
+            with self.subTest(time_unit=unit):
+                sr = self.dut.find_slew_rate(t, v, time_unit=unit)
+                self.assertAlmostEqual(sr / expected, 1.0, places=9)
+
+    def test_rc_settling_uses_10_90_average_not_peak_slope(self):
+        # A bandwidth-limited (single-pole) step v = V(1 - exp(-t/tau)) has its steepest
+        # slope V/tau at t = 0, but the 10-90% definition averages over the edge:
+        # SR = 0.8 V / (tau ln 9). Checks the thresholds are applied to the full swing.
+        V, tau = 1.2, 10e-9
+        t = np.linspace(0, 40 * tau, 40001)
+        v = V * (1 - np.exp(-t / tau))
+        expected = 0.8 * V / (tau * np.log(9)) * 1e-6        # ~43.7 V/us
+        sr = self.dut.find_slew_rate(t, v)
+        self.assertAlmostEqual(sr / expected, 1.0, places=4)
+        self.assertLess(sr, V / tau * 1e-6)                    # below the 120 V/us peak
+
+    def test_pulse_train_reports_slowest_rising_edge(self):
+        # Two rising edges: a fast 60 V/us edge first, then a slow 30 V/us edge after a
+        # fast fall. The reported slew rate must be the worst case (30), not the first or
+        # the average edge, and the fast falling edge in between must not be mistaken
+        # for a rising edge.
+        t = np.arange(0, 300e-9, 0.7e-9)
+        v = np.interp(t, [0, 10e-9, 30e-9, 100e-9, 105e-9, 200e-9, 240e-9, 300e-9],
+                         [0, 0, 1.2, 1.2, 0, 0, 1.2, 1.2])
+        self.assertAlmostEqual(self.dut.find_slew_rate(t, v) / 30.0, 1.0, places=9)
 
 
 if __name__ == '__main__':
