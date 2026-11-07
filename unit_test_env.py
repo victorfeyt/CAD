@@ -196,6 +196,33 @@ class TestReset(unittest.TestCase):
         np.testing.assert_array_equal(obs1, obs2)
 
 
+class TestSeed(unittest.TestCase):
+    """Runs ngspice. CircuitEnv(seed=...) must make the random initial design (reset) and
+    the warm-up actions (action_space.sample) repeatable; gymnasium otherwise seeds both
+    RNGs from OS entropy, so no two training runs would match."""
+
+    @staticmethod
+    def _first_draws(seed):
+        env = CircuitEnv(circuit_name='TwoStage', run_id='unittest', simulator='ngspice', seed=seed)
+        env.reset()
+        return env, dict(env.param_values), env.action_space.sample()
+
+    def test_same_seed_gives_same_draws(self):
+        _, design1, action1 = self._first_draws(7)
+        env, design2, action2 = self._first_draws(7)
+        self.assertEqual(design1, design2)
+        np.testing.assert_array_equal(action1, action2)
+        # The two RNGs get different seeds: with equal ones the first warm-up step would
+        # just re-simulate the episode's initial design.
+        self.assertNotEqual(env.action_refine(action2), design2)
+
+    def test_different_seeds_give_different_draws(self):
+        _, design1, action1 = self._first_draws(7)
+        _, design2, action2 = self._first_draws(8)
+        self.assertNotEqual(design1, design2)
+        self.assertFalse(np.array_equal(action1, action2))
+
+
 class TestStep(unittest.TestCase):
     """Runs ngspice. Checks that step() returns a well-formed (obs, reward, done, info)
     tuple, advances the episode counter, and ends the episode after max_steps_per_episode."""
@@ -261,8 +288,6 @@ class TestRewardComputation(unittest.TestCase):
                 self.assertIsInstance(hard_satisfied, (bool, np.bool_))
 
     def test_matches_references_csv(self):
-        # Same tolerance as unit_test_dut Part B: the TA rewards are only reproducible
-        # to within a few percent, so REL_TOL rather than a digit-exact comparison.
         if not self.rows:
             self.skipTest(f'{REF_CSV} not found')
         for row in self.rows:

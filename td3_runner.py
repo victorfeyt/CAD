@@ -26,7 +26,7 @@ def readParser():
     parser.add_argument('--target_update_interval', type=int, default=1, metavar='N',
                         help='Value target update per no. of updates per step')
     
-    parser.add_argument('--actor_update_interval', type=int, default=2, metavar='N',
+    parser.add_argument('--actor_update_interval', type=int, default=1, metavar='N',
                         help='Actor target update per no. of updates per step')
     
     parser.add_argument('--hidden_size', type=int, default=256, metavar='N',
@@ -112,14 +112,27 @@ def train_policy(args, env_pool, agent, total_steps):
     agent.update_parameters(memory_batch=batch, update=total_steps)
 
 
+def set_seed(seed):
+    """
+    Seed the global RNGs so that the same seed and hyperparameters reproduce a run exactly.
+    The env's own RNGs (initial designs, warm-up actions) are seeded by CircuitEnv(seed=...).
+    Python's `random` stays unseeded on purpose: it only names ngspice's temp files, and
+    seeded names could collide between parallel runs with the same seed.
+    """
+    np.random.seed(seed)     # exploration noise (TD3.select_action), replay buffer sampling
+    torch.manual_seed(seed)  # network initialization, target policy noise (CPU and all GPUs)
+    # agent.py runs on the GPU whenever one is available: make its kernels deterministic too
+    os.environ.setdefault('CUBLAS_WORKSPACE_CONFIG', ':4096:8')
+    torch.use_deterministic_algorithms(True)
+
+
 def main(args=None):
     if args is None:
         args = readParser()
-    # Set random seed
-    torch.manual_seed(args.seed)
-    np.random.seed(args.seed)
+    # Set random seeds: the global RNGs here, the env's own RNGs through its constructor
+    set_seed(args.seed)
     # Initial environment
-    env = CircuitEnv(run_id=args.run_id)
+    env = CircuitEnv(run_id=args.run_id, seed=args.seed)
     state_dim = env.observation_space.shape[0]
     action_dim = env.action_space.shape[0]
     # Intial agent

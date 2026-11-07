@@ -3,7 +3,7 @@
 Goal: size the two-stage Miller op-amp with the `cad` MCP tools. Tokens and simulations are both scored, so be brief.
 
 Hard constraints: gain >= 200, noise <= 0.03, phm >= 60, slewRate >= 30, ugbw >= 100e6.
-Then minimise area (target 2e-9) and current (target 2e-4). Higher reward is better; feasible designs score above unfeasible ones in most cases, so check `feasible`.
+Then minimise area (target 2e-9) and current (target 2e-4). Higher reward is better; satisfactory designs score above unsatisfactory ones in most cases, so check `hard_constraints_satisfied`.
 
 Rules:
 - Start from nothing. Never read `solutions/`, `output_figs/`, `references.csv` or source code.
