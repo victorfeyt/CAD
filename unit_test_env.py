@@ -195,6 +195,29 @@ class TestReset(unittest.TestCase):
         self.assertEqual(params1, params2)
         np.testing.assert_array_equal(obs1, obs2)
 
+    def test_reset_mid_episode_starts_fresh_episode(self):
+        # Training calls reset() on a dirty env. If the episode counter or score carried
+        # over, the next episode would end early (done after 7 steps instead of 10) and
+        # the per-episode score would mix two episodes.
+        action = np.zeros(self.env.n_actions)
+        self.env.reset(seed=1)
+        for _ in range(3):
+            self.env.step(action)
+
+        obs = self.env.reset(seed=2)
+        self.assertEqual(self.env.episode_steps, 0)
+        self.assertEqual(self.env.score, 0.0)
+        self.assertTrue(self.env.observation_space.contains(obs),
+                        msg=f'obs {obs} outside the observation space')
+
+        # The new episode must last exactly max_steps_per_episode steps.
+        for i in range(1, self.env.max_steps_per_episode):
+            _, _, done, _ = self.env.step(action)
+            with self.subTest(step=i):
+                self.assertFalse(done)
+        _, _, done, _ = self.env.step(action)
+        self.assertTrue(done)
+
 
 class TestSeed(unittest.TestCase):
     """Runs ngspice. CircuitEnv(seed=...) must make the random initial design (reset) and
@@ -254,6 +277,30 @@ class TestStep(unittest.TestCase):
                 self.assertFalse(done)
         _, _, done, _ = self.env.step(action)
         self.assertTrue(done)
+
+    def test_step_depends_only_on_action(self):
+        # step(a), step(b), step(a): the two step(a) results must be identical, so no
+        # state from the previous design leaks into the next one. Each result must also be
+        # the end-to-end pipeline simulate -> normalize_specs -> reward_computation of the
+        # design just sampled, with obs in dict_targets order.
+        self.env.reset(seed=0)
+        a, b = np.zeros(self.env.n_actions), 0.5 * np.ones(self.env.n_actions)
+        results = []
+        for action in (a, b, a):
+            obs, reward, _, info = self.env.step(action)
+            norm = self.env.normalize_specs(self.env.real_specs)
+            exp_reward, exp_flag = self.env.reward_computation(norm)
+            with self.subTest(step=len(results) + 1):
+                np.testing.assert_array_equal(
+                    obs, np.array([norm[k] for k in self.env.dict_targets], dtype=np.float32))
+                self.assertEqual(reward, exp_reward)
+                self.assertEqual(info['goal_reached'], exp_flag)
+            results.append((obs, reward))
+
+        np.testing.assert_array_equal(results[0][0], results[2][0])
+        self.assertEqual(results[0][1], results[2][1])
+        self.assertFalse(np.array_equal(results[0][0], results[1][0]),
+                         msg='actions a and b gave the same obs; the test would prove nothing')
 
 
 class TestRewardComputation(unittest.TestCase):
