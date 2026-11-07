@@ -14,3 +14,5 @@ Grids: m 1..24; w 0.25u..2.75u step 0.25u; l 45n..180n step 45n; cap 0.1p..9.9p 
 Hard specs: gain >= 200, noise <= 0.03, phm >= 60 deg, slewRate >= 30 V/us, ugbw >= 100 MHz.
 Objectives: minimise current (target 200 uA) and area (target 2e-9 m^2).
 Scoring: a feasible design beats an infeasible one. Beyond that, the reward keeps rising as current and area fall below their targets. The simulator is deterministic, at the nominal corner only.
+
+Never read files; use only the cad tools and your skills.

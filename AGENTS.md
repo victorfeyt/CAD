@@ -7,6 +7,6 @@ Then minimise area (target 2e-9) and current (target 2e-4). Higher reward is bet
 
 Rules:
 - Start from nothing. Never read `solutions/`, `output_figs/`, `references.csv` or source code.
-- Use only the `cad` tools and your skills. Do not explore files.
+- Use only the `cad` tools and your skills. Never read, list or search files (no read_file or similar): headless runs deny it and the run ends.
 - Every LLM turn is expensive: use as few tool calls as possible. Call `get_status` with k=1.
 - Keep replies short: results and the reasoning behind decisions only.

@@ -17,6 +17,6 @@ Reward of a feasible design = 0.3 + m(current) + m(area), with m(x) = (target - 
 3. In each response, issue 4 to 6 parallel `simulate` calls: variants of one idea at different strengths, each compensated to keep DC balance and phm.
 4. Use the results to aim the next batch. If a variant jumps (gain or ugbw collapses, or the current moves more than the mirrors predict), the balance has railed the output. Sweep the balancing device finely with w steps.
 
-Use at most 3 batches and 18 simulations. Keep the best feasible design by reward. If none is feasible, return the closest one. If nothing improves, return the input.
+Always run at least one batch, even when the input looks good: surplus margin is unused reward. Use at most 3 batches and 18 simulations. Keep the best feasible design by reward. If none is feasible, return the closest one. If nothing improves, return the input.
 
 Reply only with the card format you received, with one STEPS line per batch, with numbers.
