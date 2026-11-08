@@ -1,6 +1,7 @@
 import argparse
 import os
 import shutil
+import time
 import torch
 import numpy as np
 from td3 import TD3, ReplayBuffer
@@ -8,10 +9,11 @@ from circuit_env import CircuitEnv
 from utils.plotting import solutions2pareto
 from datetime import datetime
 
+
 def readParser():
     parser = argparse.ArgumentParser(description='TD3-based RL for Circuit Sizing')
 
-    parser.add_argument('--seed', type=int, default=123456, metavar='N',
+    parser.add_argument('--seed', type=int, default=2143, metavar='N',
                         help='random seed')
 
     parser.add_argument('--noise_sigma', type=float, default=0.1,
@@ -140,7 +142,10 @@ def main(args=None):
     # Initial pool for env
     env_pool = ReplayBuffer(state_dim, action_dim, max_size=args.replay_size)
     # Training
+    t0 = time.perf_counter()
     train(args, env, agent, env_pool)
+    max_reward = max(env.reward_history, default=None)
+    print(f'Training took {time.perf_counter() - t0:.1f} s with seed {args.seed} and max reward {max_reward}.')
     # Pareto front (area vs. current) of all solutions that satisfied the hard constraints
     solutions_csv = f'./solutions/{args.run_id}.csv'
     if os.path.isfile(solutions_csv):

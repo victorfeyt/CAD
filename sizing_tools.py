@@ -12,11 +12,11 @@ from types import SimpleNamespace
 
 import numpy as np
 import torch
-import subprocess
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 from circuit_env import CircuitEnv
 from td3 import ReplayBuffer, TD3
+from td3_runner import clean_no_backup
 
 
 SPEC_UNITS = {
@@ -242,7 +242,7 @@ class SizingExperiment:
                     self.warmup_steps += 1
 
                 if self.simulator_calls % 100 == 0:
-                    subprocess.run(["./clean.sh"], stdout=subprocess.DEVNULL)
+                    clean_no_backup()  # not ./clean.sh: that fails on Windows (WinError 193)
         except (RuntimeError, ValueError, IndexError, OSError) as error:
             raise RuntimeError(f"Stopped after {counts['steps_completed']} of {n_steps} steps: {error} "
                             "Completed work is kept; inspect get_status() before retrying.") from error
