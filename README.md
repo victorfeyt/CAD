@@ -73,9 +73,28 @@ agy -p ((Get-Content PROMPT.md -Raw) + " RL mode: on.") --agent sizing-lead --mo
 - Note the tokens (`usage.total_tokens`), `simulator_calls` and `duration_seconds` in `HARNESS_LOG.md`.
 - Every agy run uses our shared token budget, so only run what is needed.
 
-## Results so far
-| Run | Setup | Reward | Simulations | Tokens | Time |
-|---|---|---|---|---|---|
-| run1 | old setup, through the TD3 fallback | 0.305 | 1,104 | 115k | 111 s |
-| run2 | generic skill, result cards | 0.620 | 19 | 213k | 102 s |
-| run4 | RL mode on, hand design not feasible, then TD3 | 0.305 | 1,108 | 149k | 130 s |
+## Results of all runs
+All runs start from scratch. Feasible results were checked by re-simulating them locally. Run outputs and the log are in `../CAD_results/`.
+
+| Run | Model | Setup / what happened | Feasible | Reward | Simulations | Tokens | Time |
+|---|---|---|---|---|---|---|---|
+| run1 | flash-low | old setup, through the TD3 fallback | yes | 0.305 | 1,104 | 115k | 111 s |
+| run2 | flash-low | generic skill, result cards | yes | 0.620 | 19 | 213k | 102 s |
+| run4 | flash-low | RL mode on; same TD3 design as run1 (same seed); reviewer skipped | yes | 0.305 | 1,108 | 149k | 130 s |
+| run5 | flash-low | TD3 fallback, but a shorter run than instructed | yes | 0.135 | 446 | 111k | 76 s |
+| run6 | flash-low | lead announced RL as text, which ended the run | no | −0.272 | 10 | 173k | 88 s |
+| run7 | flash-high | timed out, then resumed; phm 0.75° short; lead skipped RL and the reviewer | no | 0.013 | 25 | 318k | 546 s |
+| run8 | flash-low | fixed flow: TD3, then the reviewer repaired the slew rate (Cc 4.1 → 2.8 pF) | yes | 0.001 | 286 | 200k | 103 s |
+| run9 | flash-high | used `send_message` instead of the subagent tool, so no design | – | – | 0 | 243k | 424 s |
+| run10 | flash-high | **best run**; a denied `read_file` stopped it once, then resumed | yes | **0.621** | 19 | 294k | 692 s |
+| run11 | flash-medium | hand design feasible in 9 sims; reviewer did not try to improve | yes | 0.567 | 9 | 186k | 214 s |
+
+**Fixes after the failures:**
+- a mandatory agent order (run6, run7)
+- the `send_message` ban (run9)
+- the rule against reading files (run10)
+- "always at least one reviewer batch" (run11)
+
+**Best design (run10):**
+- **Sizes:** mn1 5/2u/90n, mp1 1/2u/90n, mn3 1/1u/90n, mn4 2/1u/90n, mp3 6/2u/90n, mn5 6/1u/90n. Cc 0.3 pF, Rc 9 kΩ.
+- **Specs:** gain 630, ugbw 100.09 MHz, phm 62.65°, current 258 µA, area 762 µm².
